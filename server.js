@@ -13,6 +13,7 @@ let llmApiKey = process.env.LLM_API_KEY || '';
 const PUBLIC = path.join(__dirname, 'public');
 const SETTINGS_FILE = path.join(__dirname, 'data', 'settings.json');
 const LIBRARY_FILE = path.join(__dirname, 'data', 'library.json');
+const CHARACTER_CANON_FILE = path.join(__dirname, 'data', 'character-canon.json');
 const allowed = new Set(['/system_stats', '/object_info', '/queue', '/history', '/prompt', '/interrupt', '/free']);
 
 const types = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.svg':'image/svg+xml', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.webp':'image/webp', '.gif':'image/gif', '.mp4':'video/mp4', '.webm':'video/webm' };
@@ -142,18 +143,34 @@ function promptGuidanceForModel(model = '') {
   return {...dialect,instructions:`Selected prompt dialect: ${dialect.label} (${dialect.format}). ${guides[dialect.id]} ${shared}`};
 }
 
+function matchCharacterCanon(idea, entries = []) {
+  const haystack=String(idea||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  return (Array.isArray(entries)?entries:[]).filter(entry=>{
+    const aliases=[entry?.name,...(Array.isArray(entry?.aliases)?entry.aliases:[])].filter(Boolean);
+    return aliases.some(alias=>{
+      const needle=String(alias).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+      return needle&&(` ${haystack} `).includes(` ${needle} `);
+    });
+  }).map(({aliases,...entry})=>entry).slice(0,6);
+}
+
+function localCharacterReferences(idea) {
+  try{return matchCharacterCanon(idea,JSON.parse(fs.readFileSync(CHARACTER_CANON_FILE,'utf8')))}catch{return []}
+}
+
 async function resolveCharacterReferences(idea) {
+  const known=localCharacterReferences(idea);
   const request={model:llmModel,temperature:0.1,max_tokens:900,messages:[
     {role:'system',content:'Extract established named fictional characters from an image idea and prepare a canonical visual identity brief. Return JSON only: {"characters":[{"name":"canonical name","series":"originating work","appearance":"hair, eyes, face, skin, signature nonhuman traits","body_proportions":"canonical height/build/silhouette stated neutrally","default_outfit":"specific canonical everyday outfit and colors","identity_exclusions":"likely wrong substitutions to prevent","style":"originating series visual style","confidence":"high|medium|low"}]}. Include only established public fictional characters, not generic people or private/custom characters. Separate canonical identity from scene invention. Never invent a tavern, bar, bedroom, school, historical costume, kimono, maid outfit, or other setting/outfit merely from a character name. Use the canonical default outfit unless the user explicitly requests another outfit. Do not add rating or adult-content tags. If unsure, use low confidence and leave uncertain details empty rather than guessing. Do not debate or add prose.'},
-    {role:'user',content:JSON.stringify({idea})}
+    {role:'user',content:JSON.stringify({idea,verified_private_overrides:known})}
   ]};
   if(/deepseek\.com/i.test(llmUrl)){request.thinking={type:'disabled'};request.response_format={type:'json_object'}}
   try{
     const response=await fetch(llmUrl+'/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json',...(llmApiKey?{authorization:`Bearer ${llmApiKey}`}:{})},body:JSON.stringify(request)}),data=await response.json();
     if(!response.ok)throw new Error();
-    const parsed=JSON.parse(String(data.choices?.[0]?.message?.content||'{}').replace(/^```(?:json)?\s*|\s*```$/g,'')),generated=Array.isArray(parsed.characters)?parsed.characters:[];
-    return generated.filter(x=>x&&x.name).slice(0,6);
-  }catch{return []}
+    const parsed=JSON.parse(String(data.choices?.[0]?.message?.content||'{}').replace(/^```(?:json)?\s*|\s*```$/g,'')),generated=Array.isArray(parsed.characters)?parsed.characters:[],knownNames=new Set(known.map(x=>String(x.name).toLowerCase()));
+    return [...known,...generated.filter(x=>x&&x.name&&!knownNames.has(String(x.name).toLowerCase()))].slice(0,6);
+  }catch{return known}
 }
 
 async function writeImagePrompts(idea, context = {}) {
@@ -312,4 +329,4 @@ if(require.main===module)server.listen(PORT, HOST, () => {
   console.log(`ComfyUI: ${comfyUrl}`);
 });
 
-module.exports={sanitizeNegativePrompt,inferLoraTrigger,promptDialectForModel,promptGuidanceForModel};
+module.exports={sanitizeNegativePrompt,inferLoraTrigger,promptDialectForModel,promptGuidanceForModel,matchCharacterCanon};
