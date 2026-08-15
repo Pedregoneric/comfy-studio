@@ -73,6 +73,7 @@ You can then open `http://THIS_PC_TAILSCALE_IP:3030` from any device on the same
 - ComfyUI-native LoRA prompting: node-loaded weights with exact activation triggers in the positive prompt
 - Canonical character identity briefs for established characters, covering appearance, proportions, default outfit, signature traits, and originating-series style
 - Automatic source-backed character research using public MediaWiki references, with evidence-constrained extraction and alternate-form rejection
+- Arc-, era-, season-, transformation-, and outfit-aware canon locks so version-specific designs do not fall back to a generic appearance
 - Strict-canon requests fail clearly when references cannot be verified instead of silently using hallucinated model memory
 - Optional private `data/character-canon.json` overrides for exact local identity locks; the ignored file is never committed to Git
 
