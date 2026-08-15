@@ -105,15 +105,25 @@ async function pollResult(id){
 }
 function finishLoading(){els.generate.disabled=false;els.progress.classList.add('hidden');els.status.textContent='Ready to create'}
 function mediaUrl(o){return `/api/view?filename=${encodeURIComponent(o.filename)}&subfolder=${encodeURIComponent(o.subfolder||'')}&type=${encodeURIComponent(o.type||'output')}`}
+function historySettings(job){
+  const graph=job?.prompt?.[2];if(!graph||typeof graph!=='object')return null;
+  const nodes=Object.values(graph),find=type=>nodes.find(n=>n?.class_type===type),sampler=find('KSampler')||nodes.find(n=>/Sampler$/.test(n?.class_type||''));if(!sampler)return null;
+  const referencedText=ref=>{const node=graph[String(Array.isArray(ref)?ref[0]:'')],inputs=node?.inputs||{};return String(inputs.text??inputs.prompt??'')};
+  const checkpoint=find('CheckpointLoaderSimple'),diffusion=find('UNETLoader'),modelName=checkpoint?.inputs?.ckpt_name||diffusion?.inputs?.unet_name||'';
+  const latent=find('EmptyLatentImage')||find('EmptySD3LatentImage'),loras=nodes.filter(n=>n?.class_type==='LoraLoader').map(n=>({name:n.inputs?.lora_name||'',weight:Number(n.inputs?.strength_model??1),trigger:''})).filter(x=>x.name);
+  return {model:modelName?`${diffusion?'diffusion':'checkpoint'}::${modelName}`:undefined,modelName,modelType:diffusion?'diffusion':'checkpoint',positive:referencedText(sampler.inputs?.positive),negative:referencedText(sampler.inputs?.negative),width:Number(latent?.inputs?.width)||undefined,height:Number(latent?.inputs?.height)||undefined,steps:Number(sampler.inputs?.steps)||undefined,cfg:Number(sampler.inputs?.cfg)||undefined,sampler:sampler.inputs?.sampler_name,scheduler:sampler.inputs?.scheduler,seed:Number.isFinite(Number(sampler.inputs?.seed))?Number(sampler.inputs.seed):-1,workflow:'txt2img',loras};
+}
 function extractOutputs(history){
-  const out=[];Object.entries(history).forEach(([promptId,job])=>Object.values(job.outputs||{}).forEach(node=>{
-    ['images','gifs','videos','audio'].forEach(kind=>(node[kind]||[]).forEach(file=>out.push({...file,kind,promptId,time:Number(promptId)||0})))
-  }));return out.reverse()
+  const out=[];Object.entries(history).forEach(([promptId,job])=>{const settings=historySettings(job);Object.values(job.outputs||{}).forEach(node=>{
+    ['images','gifs','videos','audio'].forEach(kind=>(node[kind]||[]).forEach(file=>out.push({...file,kind,promptId,time:Number(promptId)||0,settings})))
+  })});return out.reverse()
 }
 function showOutput(o){
   const url=mediaUrl(o),isVideo=o.kind==='videos'||o.kind==='gifs'||/\.(mp4|webm|mov)$/i.test(o.filename);
   $('.placeholder').classList.add('hidden');els.preview.classList.toggle('hidden',isVideo);els.video.classList.toggle('hidden',!isVideo);
   if(isVideo)els.video.src=url;else els.preview.src=url;els.stage.classList.remove('empty');state.active=o;$('#openOriginal').classList.remove('hidden');$('#openOriginal').onclick=()=>window.open(url,'_blank');els.status.textContent=o.filename;
+  if(o.settings){apply(o.settings);toast('Prompts and settings restored from this generation')}
+  window.ComfyEnhancements?.selectOutput?.(o);
   document.querySelector('[data-view="create"]').click();
 }
 async function loadHistory(){
