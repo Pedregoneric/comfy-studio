@@ -72,6 +72,8 @@ You can then open `http://THIS_PC_TAILSCALE_IP:3030` from any device on the same
 - Model-aware prompt dialects for Illustrious/NoobAI/Animagine, Pony, SDXL, SD 1.5, FLUX, and Qwen Image/Anima
 - ComfyUI-native LoRA prompting: node-loaded weights with exact activation triggers in the positive prompt
 - Canonical character identity briefs for established characters, covering appearance, proportions, default outfit, signature traits, and originating-series style
+- Automatic source-backed character research using public MediaWiki references, with evidence-constrained extraction and alternate-form rejection
+- Strict-canon requests fail clearly when references cannot be verified instead of silently using hallucinated model memory
 - Optional private `data/character-canon.json` overrides for exact local identity locks; the ignored file is never committed to Git
 
 ![Reusable character profiles](docs/screenshots/characters.png)

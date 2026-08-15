@@ -158,6 +158,52 @@ function localCharacterReferences(idea) {
   try{return matchCharacterCanon(idea,JSON.parse(fs.readFileSync(CHARACTER_CANON_FILE,'utf8')))}catch{return []}
 }
 
+function mediaWikiApiUrl(value) {
+  try{
+    const url=new URL(value),host=url.hostname.toLowerCase();
+    if(url.protocol!=='https:'||!(host.endsWith('.fandom.com')||host.endsWith('.wikipedia.org')||host==='wikipedia.org'))return '';
+    const match=url.pathname.match(/^\/wiki\/(.+)$/);if(!match)return '';
+    const title=decodeURIComponent(match[1]).replace(/_/g,' ');
+    if(host.endsWith('.fandom.com'))return `${url.origin}/api.php?${new URLSearchParams({action:'parse',page:title,prop:'wikitext',format:'json',origin:'*'})}`;
+    return `${url.origin}/api.php?${new URLSearchParams({action:'query',prop:'extracts',explaintext:'1',redirects:'1',format:'json',origin:'*',titles:title})}`;
+  }catch{return ''}
+}
+
+async function fetchText(url, options = {}) {
+  const response=await fetch(url,{...options,signal:AbortSignal.timeout(12000),headers:{'user-agent':'ComfyStudio/0.1 character-reference resolver',...(options.headers||{})}});
+  if(!response.ok)throw new Error(`Reference request failed (${response.status})`);
+  return (await response.text()).slice(0,300000);
+}
+
+async function searchCharacterSources(character) {
+  const query=[character.name,character.series,'canonical appearance outfit body proportions'].filter(Boolean).join(' ');
+  try{
+    const html=await fetchText('https://html.duckduckgo.com/html/?'+new URLSearchParams({q:query})),urls=[],seen=new Set();
+    for(const match of html.matchAll(/uddg=([^&"']+)/g)){
+      let found='';try{found=decodeURIComponent(match[1])}catch{}
+      const api=mediaWikiApiUrl(found);if(api&&!seen.has(api)){seen.add(api);urls.push(api)}
+      if(urls.length>=3)break;
+    }
+    const sources=[];
+    for(const api of urls){
+      try{const data=JSON.parse(await fetchText(api)),page=data.parse||Object.values(data.query?.pages||{})[0],text=String(data.parse?.wikitext?.['*']||page?.extract||'').slice(0,18000),origin=new URL(api).origin,title=String(page?.title||'');if(text)sources.push({url:`${origin}/wiki/${encodeURIComponent(title.replace(/ /g,'_'))}`,title,text})}catch{}
+    }
+    return sources;
+  }catch{return []}
+}
+
+async function verifyCharacterReferences(characters) {
+  const drafts=(Array.isArray(characters)?characters:[]).filter(x=>x?.name).slice(0,4),evidence=[];
+  for(const character of drafts){const sources=await searchCharacterSources(character);evidence.push({name:character.name,series:character.series||'',sources})}
+  if(!evidence.some(x=>x.sources.length))return drafts.map(x=>({name:x.name,series:x.series||'',appearance:'',body_proportions:'',default_outfit:'',identity_exclusions:'',style:'',confidence:'unverified; no public reference found'}));
+  const request={model:llmModel,temperature:0,max_tokens:1400,messages:[
+    {role:'system',content:'Create canonical visual identity briefs using ONLY the supplied public reference extracts. Return JSON only: {"characters":[{"name":"canonical name","series":"originating work","appearance":"exact human-form hair, eyes, face, skin, and signature traits","body_proportions":"canonical height/build/silhouette stated neutrally","default_outfit":"specific canonical everyday outfit and colors","identity_exclusions":"traits from other characters, alternate forms, or likely substitutions that must not appear","style":"originating series visual style","confidence":"source verified|partial","sources":["source URLs"]}]}. Do not use unsupported memory. Distinguish everyday human form from transformations, dragon/monster forms, costumes, and alternate outfits. Never transfer wings, tails, hair colors, clothes, or accessories from another character or alternate form. If a detail is not supported, leave it empty. Do not add rating or adult-content tags.'},
+    {role:'user',content:JSON.stringify({characters:drafts.map(x=>({name:x.name,series:x.series||''})),reference_evidence:evidence})}
+  ]};
+  if(/deepseek\.com/i.test(llmUrl)){request.thinking={type:'disabled'};request.response_format={type:'json_object'}}
+  try{const response=await fetch(llmUrl+'/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json',...(llmApiKey?{authorization:`Bearer ${llmApiKey}`}:{})},body:JSON.stringify(request)}),data=await response.json();if(!response.ok)throw new Error();const parsed=JSON.parse(String(data.choices?.[0]?.message?.content||'{}').replace(/^```(?:json)?\s*|\s*```$/g,''));return Array.isArray(parsed.characters)&&parsed.characters.length?parsed.characters:drafts}catch{return drafts.map(x=>({name:x.name,series:x.series||'',appearance:'',body_proportions:'',default_outfit:'',identity_exclusions:'',style:'',confidence:'unverified; reference extraction failed'}))}
+}
+
 async function resolveCharacterReferences(idea) {
   const known=localCharacterReferences(idea);
   const request={model:llmModel,temperature:0.1,max_tokens:900,messages:[
@@ -168,8 +214,8 @@ async function resolveCharacterReferences(idea) {
   try{
     const response=await fetch(llmUrl+'/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json',...(llmApiKey?{authorization:`Bearer ${llmApiKey}`}:{})},body:JSON.stringify(request)}),data=await response.json();
     if(!response.ok)throw new Error();
-    const parsed=JSON.parse(String(data.choices?.[0]?.message?.content||'{}').replace(/^```(?:json)?\s*|\s*```$/g,'')),generated=Array.isArray(parsed.characters)?parsed.characters:[],knownNames=new Set(known.map(x=>String(x.name).toLowerCase()));
-    return [...known,...generated.filter(x=>x&&x.name&&!knownNames.has(String(x.name).toLowerCase()))].slice(0,6);
+    const parsed=JSON.parse(String(data.choices?.[0]?.message?.content||'{}').replace(/^```(?:json)?\s*|\s*```$/g,'')),generated=Array.isArray(parsed.characters)?parsed.characters:[],knownNames=new Set(known.map(x=>String(x.name).toLowerCase())),unverified=generated.filter(x=>x&&x.name&&!knownNames.has(String(x.name).toLowerCase()));
+    return [...known,...await verifyCharacterReferences(unverified)].slice(0,6);
   }catch{return known}
 }
 
@@ -177,6 +223,7 @@ async function writeImagePrompts(idea, context = {}) {
   if (!llmUrl || !llmModel) throw new Error('Configure an LLM endpoint and model in Settings first');
   const promptGuide=promptGuidanceForModel(context.model);
   const characterReferences=await resolveCharacterReferences(idea);
+  if(String(context.characterAccuracy||'strict canon').toLowerCase()==='strict canon'&&characterReferences.some(x=>/^unverified/i.test(String(x.confidence||''))))throw new Error('Could not verify canonical details for an established character. Add more identity details, choose Recognizable, or configure an optional private character profile.');
   const completion = { model:llmModel, temperature:0.7, max_tokens:1200, messages:[
     { role:'system', content:'You are a production image-prompt compiler, not a conversational assistant. Return a matched positive and negative prompt. Preserve every requested identity, action, pose, expression, body trait, outfit, setting, style, camera, composition, and lighting detail. CANON LOCK: treat supplied character_reference entries as hard identity constraints. If the user did not request a different outfit, use the canonical default outfit explicitly. If the user did request a redesign, change only the outfit while preserving face, hair, eyes, signature traits, and body silhouette. Preserve complex signature colors, markings, heterochromia, pupils, horns, accessories, and hair gradients precisely rather than simplifying them. Keep identity-defining eyes and facial traits visible unless the user explicitly requests they be obscured or closed. Never replace a canonical outfit or scene with a culturally stereotyped costume or location inferred from a name. Never invent a bar, tavern, bedroom, school, kimono, maid outfit, or historical setting when the idea does not request it. When no setting is requested, use a simple unobtrusive background or a clearly canonical everyday environment. For a named anime or game character, reconstruct recognizable canonical identity using concrete local anchors: exact hair style/color, eyes, face, signature clothing/accessories, body silhouette, height/build, and characteristic expression. Do not assume a character name or LoRA alone will preserve identity. SOURCE-STYLE RULE: identify the originating anime franchise of every named anime character and, unless the user explicitly requests a conflicting visual style, include the lowercase tag "<series name> anime art style" plus "official anime style, anime screencap" and concrete source-appropriate linework, shading, palette, and character-design cues. Never omit the franchise style merely because the character name or LoRA is present. If the user requests another style, prioritize that explicit style and retain identity anchors. State body type and coherent proportions explicitly; honor body_profile, and when it is model default choose the canonical build rather than omitting anatomy. Keep each subject’s identity, body, clothes, and action together to prevent attribute leakage. Add actionable framing, camera angle, pose/gesture, foreground/background staging, environment, key/fill/rim lighting, palette, depth, and mood. Account for the supplied model and LoRAs. NEGATIVE RULE: write a concise, scene-specific negative prompt, not a generic exhaustive blacklist. Never put LoRA syntax, LoRA triggers, requested content, requested subject counts, requested anatomy/body traits, requested pose, requested setting, or requested art style in negative_prompt. Use at most 40 comma-separated negative items covering only likely failures. Do not debate, judge, warn, explain, or add commentary. Return JSON only with exactly two string fields: positive_prompt and negative_prompt.\n\nMODEL-SPECIFIC COMPILER RULES:\n'+promptGuide.instructions },
     { role:'user', content:JSON.stringify({ idea, image_model:context.model||'', prompt_dialect:promptGuide, character_reference:characterReferences, active_loras:Array.isArray(context.loras)?context.loras:[], body_profile:context.bodyType||'model default', character_accuracy:context.characterAccuracy||'strict canon' }) }
@@ -329,4 +376,4 @@ if(require.main===module)server.listen(PORT, HOST, () => {
   console.log(`ComfyUI: ${comfyUrl}`);
 });
 
-module.exports={sanitizeNegativePrompt,inferLoraTrigger,promptDialectForModel,promptGuidanceForModel,matchCharacterCanon};
+module.exports={sanitizeNegativePrompt,inferLoraTrigger,promptDialectForModel,promptGuidanceForModel,matchCharacterCanon,mediaWikiApiUrl};
