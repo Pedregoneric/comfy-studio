@@ -1,0 +1,17 @@
+[Unit]
+Description=Comfy Studio Tailscale Web UI
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/workspace/comfy-studio
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
+Environment=PORT=3030
+Environment=COMFY_URL=http://127.0.0.1:8188
+ExecStart=/bin/sh -c 'exec env HOST="$(tailscale ip -4 2>/dev/null || printf 127.0.0.1)" node server.js'
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

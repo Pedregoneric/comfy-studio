@@ -1,0 +1,13 @@
+{
+  "name": "comfy-studio",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "A friendly, focused frontend for a remote ComfyUI instance",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=18" }
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Comfy Studio Image"
+  short_description: "Generate images through Comfy Studio and ComfyUI"
+  default_prompt: "Generate an image from my idea using Comfy Studio and return the result."

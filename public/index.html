@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Comfy Studio</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/diffusion.css">
+  <link rel="stylesheet" href="/settings.css">
+  <link rel="stylesheet" href="/features.css">
+</head>
+<body>
+  <div class="noise"></div>
+  <header>
+    <a class="brand" href="#"><span class="brand-mark">C</span><span>Comfy <b>Studio</b></span></a>
+    <nav><button class="nav active" data-view="create">Create</button><button class="nav" data-view="history">Library</button><button class="nav" data-view="characters">Characters</button><button class="nav" data-view="jobs">Jobs</button><button class="nav" data-view="settings">Settings</button></nav>
+    <div id="connection" class="connection"><i></i><span>Connecting</span></div>
+  </header>
+
+  <main>
+    <section id="createView" class="create-layout">
+      <aside class="controls">
+        <div class="eyebrow">NEW GENERATION</div>
+        <h1>What will you<br><em>imagine?</em></h1>
+
+        <label class="field"><div class="field-head"><span>Image model</span><button id="browseModels" class="text-btn" type="button">Browse models</button></div><select id="model"><option>Loading models…</option></select></label>
+        <div class="settings-grid compact-grid"><label><span>Workflow</span><select id="workflowType"><option value="txt2img">Text to image</option><option value="img2img">Image to image</option><option value="inpaint">Inpaint (alpha mask)</option><option value="upscale">Generate + 2× upscale</option><option value="custom">Imported API workflow</option></select></label><label><span>Batch</span><input id="batchCount" type="number" min="1" max="8" value="1"></label></div>
+        <div id="referencePanel" class="reference-panel hidden"><label class="field"><span>Reference image</span><input id="referenceImage" type="file" accept="image/*"></label><label class="field"><span>Denoise strength</span><input id="denoise" type="range" min="0.05" max="1" value="0.65" step="0.05"><small id="denoiseValue">0.65</small></label><div id="referencePreview"></div></div>
+        <div id="customWorkflowPanel" class="reference-panel hidden"><label class="field"><span>ComfyUI API workflow JSON</span><input id="customWorkflowFile" type="file" accept="application/json,.json"></label><small>Export using “Save (API Format)” in ComfyUI. The imported graph is submitted unchanged.</small></div>
+        <div id="diffusionSettings" class="diffusion-settings hidden">
+          <div class="model-badge"><b>Modular model</b><span>Uses a separate text encoder and VAE</span></div>
+          <label class="field"><span>Text encoder</span><select id="clipModel"></select></label>
+          <label class="field"><span>VAE</span><select id="vaeModel"></select></label>
+        </div>
+        <div class="field">
+          <div class="field-head"><span>LoRAs</span><button id="addLora" class="text-btn">+ Add LoRA</button></div>
+          <div id="loras" class="lora-list"><div class="empty-note">No LoRAs added</div></div>
+        </div>
+        <label class="field"><div class="field-head"><span>Positive prompt</span><button id="openPromptWriter" class="text-btn" type="button">✦ Write with AI</button></div><textarea id="positive" rows="6" placeholder="Describe the image you want to create…"></textarea></label>
+        <div id="promptWriter" class="prompt-writer hidden"><label><span>YOUR IDEA</span><textarea id="promptIdea" rows="3" placeholder="A specific character, pose, scene, and style…"></textarea></label><div class="writer-options"><label><span>BODY / BUILD</span><select id="writerBody"><option value="model default">Model default</option><option value="canon accurate">Canon accurate</option><option value="slim">Slim</option><option value="athletic">Athletic</option><option value="curvy">Curvy</option><option value="muscular">Muscular</option><option value="plus-size">Plus-size</option></select></label><label><span>CHARACTER ACCURACY</span><select id="writerAccuracy"><option value="strict canon">Strict canon</option><option value="recognizable">Recognizable</option><option value="creative interpretation">Creative interpretation</option></select></label></div><div><button id="cancelPromptWriter" class="text-btn">Cancel</button><button id="writePrompt" class="secondary">Create prompt</button></div></div>
+        <label class="field"><span>Negative prompt</span><textarea id="negative" rows="3" placeholder="What should be avoided?">blurry, low quality, distorted, deformed</textarea></label>
+
+        <details class="advanced">
+          <summary>Generation settings <span>⌄</span></summary>
+          <div class="settings-grid">
+            <label><span>Width</span><input id="width" type="number" value="1024" step="64" min="64"></label>
+            <label><span>Height</span><input id="height" type="number" value="1024" step="64" min="64"></label>
+            <label><span>Steps</span><input id="steps" type="number" value="28" min="1" max="150"></label>
+            <label><span>CFG</span><input id="cfg" type="number" value="7" step="0.5" min="0"></label>
+            <label><span>Sampler</span><select id="sampler"></select></label>
+            <label><span>Scheduler</span><select id="scheduler"></select></label>
+            <label class="seed-field"><span>Seed</span><div><input id="seed" type="number" value="-1"><button id="randomSeed" title="Random seed">↻</button></div></label>
+            <label class="seed-field priority-check"><input id="priorityQueue" type="checkbox"><span>Place this batch at the front of the queue</span></label>
+          </div>
+        </details>
+
+        <div class="actions">
+          <button id="savePreset" class="secondary">Save preset</button>
+          <button id="generate" class="primary"><span>Generate</span><kbd>⌘ ↵</kbd></button>
+        </div>
+        <label class="preset-select"><span>Preset</span><select id="presets"><option value="">Load a saved preset…</option></select></label>
+      </aside>
+
+      <section class="canvas-panel">
+        <div class="canvas-top"><div><span id="canvasLabel">PREVIEW</span><small id="jobStatus">Ready to create</small></div><div class="canvas-tools"><button id="inspectPrompt" class="icon-btn" title="Inspect generation">ⓘ</button><button id="cancelGeneration" class="icon-btn" title="Cancel current generation">■</button><button id="openOriginal" class="icon-btn hidden" title="Open original">↗</button></div></div>
+        <div id="stage" class="stage empty">
+          <div class="placeholder"><div class="orb"><span>✦</span></div><h2>Your canvas is waiting</h2><p>Describe an idea, choose a model,<br>and bring it to life.</p></div>
+          <div id="progress" class="progress hidden"><div class="spinner"></div><strong>Creating your image…</strong><span>This may take a moment</span></div>
+          <img id="preview" alt="Generated output" class="hidden">
+          <video id="videoPreview" controls loop class="hidden"></video>
+        </div>
+        <section id="promptFeedback" class="prompt-feedback hidden">
+          <div class="feedback-head"><div><b>Improve this result</b><span>Tell the AI writer what worked and what should change.</span></div><button id="dismissFeedback" class="text-btn" type="button">Hide</button></div>
+          <div id="feedbackChips" class="feedback-chips"><button type="button">Fix identity</button><button type="button">Fix body / proportions</button><button type="button">Change pose</button><button type="button">Improve composition</button><button type="button">Match art style</button><button type="button">Improve lighting</button></div>
+          <textarea id="feedbackText" rows="3" placeholder="Example: Keep the outfit and lighting, but make the face more canon-accurate, show a confident expression, and use a waist-up composition."></textarea>
+          <div class="feedback-actions"><span id="feedbackSummary"></span><button id="improvePrompt" class="secondary" type="button">✦ Improve prompt</button><button id="improveAndGenerate" class="primary" type="button">Improve &amp; generate</button></div>
+        </section>
+        <div class="recent-strip"><div class="strip-head"><b>Recent creations</b><button id="seeAll" class="text-btn">See all →</button></div><div id="recent" class="thumbs"><div class="empty-note">Your latest work will appear here</div></div></div>
+      </section>
+    </section>
+
+    <section id="historyView" class="history-view hidden">
+      <div class="library-head"><div><div class="eyebrow">YOUR WORK</div><h1>Creation <em>library</em></h1></div><button id="refreshHistory" class="secondary">Refresh</button></div>
+      <div id="gallery" class="gallery"></div>
+    </section>
+
+    <section id="settingsView" class="settings-view hidden">
+      <div class="eyebrow">CONFIGURATION</div><h1>Studio <em>settings</em></h1>
+      <div class="settings-card">
+        <h2>ComfyUI connection</h2><p>The server address used for model discovery, generation, and history.</p>
+        <label class="field"><span>ComfyUI URL</span><input id="settingComfyUrl" type="url" placeholder="http://127.0.0.1:8188"></label>
+        <label class="field"><span>ComfyUI root folder (optional)</span><input id="settingComfyRoot" type="text" placeholder="/path/to/ComfyUI"></label>
+        <div id="folderStatus" class="source-status">API discovery active</div>
+        <p class="help">Folder discovery is optional and only works when Comfy Studio can access the same filesystem. Remote installations safely fall back to ComfyUI's API.</p>
+        <div class="settings-actions"><button id="refreshModels" class="secondary">Refresh model index</button><button id="saveSettings" class="primary">Save settings</button></div>
+      </div>
+      <div class="settings-card"><h2>Detected inventory</h2><div id="inventory" class="inventory"><span>— checkpoints</span><span>— diffusion models</span><span>— LoRAs</span><span>— VAEs</span></div></div>
+      <div class="settings-card"><h2>AI prompt writer</h2><p>Optional OpenAI-compatible endpoint. Local servers such as Ollama, LM Studio, llama.cpp, and vLLM are supported.</p><label class="field"><span>Endpoint URL</span><input id="settingLlmUrl" type="url" placeholder="http://127.0.0.1:11434"></label><label class="field"><span>Model</span><input id="settingLlmModel" type="text" placeholder="your-local-model"></label><label class="field"><span>API key (optional)</span><input id="settingLlmKey" type="password" placeholder="Leave blank to keep the current key"></label><div class="llm-test-row"><button id="testLlm" class="secondary" type="button">Test connection</button><span id="llmTestStatus" class="source-status">Not tested</span></div><p class="help">The writer performs one task: turning an idea into a finished image prompt. Its behavior ultimately depends on the model you choose.</p></div>
+    </section>
+
+    <section id="charactersView" class="feature-view hidden"><div class="library-head"><div><div class="eyebrow">CONSISTENCY</div><h1>Character <em>profiles</em></h1></div><button id="newCharacter" class="primary">+ New profile</button></div><p class="view-intro">Lock identity anchors, preferred assets, and reference details across generations.</p><div id="characterProfiles" class="profile-grid"></div></section>
+    <section id="jobsView" class="feature-view hidden"><div class="library-head"><div><div class="eyebrow">AUTOMATION</div><h1>Agent <em>jobs</em></h1></div><button id="refreshJobs" class="secondary">Refresh</button></div><div id="queueSummary" class="queue-summary"></div><div id="agentJobs" class="jobs-list"></div></section>
+  </main>
+  <dialog id="featureDialog" class="feature-dialog"><button class="dialog-close" type="button">×</button><div id="dialogContent"></div></dialog>
+  <div id="toast" class="toast"></div>
+  <script src="/app.js"></script>
+  <script src="/enhancements.js"></script>
+</body>
+</html>
