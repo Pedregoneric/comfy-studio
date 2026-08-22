@@ -99,7 +99,7 @@ async function generate(){
   try{const ids=[];for(let i=0;i<v.batchCount;i++){const item={...v,seed:v.seed<0?-1:v.seed+i};const result=await api('/prompt',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({prompt:workflow(item),client_id:'comfy-studio',front:item.priority})});ids.push(result.prompt_id);state.pending[result.prompt_id]=item}state.active=ids.at(-1);els.status.textContent=v.batchCount>1?`Generating batch of ${v.batchCount}…`:'Generating…';pollBatch(ids)}
   catch(e){finishLoading();toast(e.message)}
 }
-function pollBatch(ids){let remaining=new Set(ids),latest;clearInterval(state.poll);state.poll=setInterval(async()=>{for(const id of [...remaining])try{const h=await api('/history/'+id);if(h[id]){remaining.delete(id);const outs=extractOutputs({[id]:h[id]});if(outs.length){latest=outs[0];showOutput(latest);window.ComfyEnhancements?.recordGeneration(id,state.pending[id],outs,h[id])}delete state.pending[id]}}catch{}els.status.textContent=remaining.size?`${ids.length-remaining.size}/${ids.length} complete`:'Ready to create';if(!remaining.size){clearInterval(state.poll);finishLoading();await loadHistory();if(!latest)toast('Batch completed without media')}},1300)}
+function pollBatch(ids){let remaining=new Set(ids),latest;clearInterval(state.poll);state.poll=setInterval(async()=>{for(const id of [...remaining])try{const h=await api('/history/'+id);if(h[id]){remaining.delete(id);const outs=extractOutputs({[id]:h[id]});if(outs.length){latest=outs[0];showOutput(latest,{restoreSettings:false});window.ComfyEnhancements?.recordGeneration(id,state.pending[id],outs,h[id])}delete state.pending[id]}}catch{}els.status.textContent=remaining.size?`${ids.length-remaining.size}/${ids.length} complete`:'Ready to create';if(!remaining.size){clearInterval(state.poll);finishLoading();await loadHistory();if(!latest)toast('Batch completed without media')}},1300)}
 async function pollResult(id){
   clearInterval(state.poll);state.poll=setInterval(async()=>{try{const h=await api('/history/'+id);if(h[id]){clearInterval(state.poll);finishLoading();const outs=extractOutputs({[id]:h[id]});if(outs.length){showOutput(outs[0]);await loadHistory()}else toast(h[id].status?.status_str==='error'?'Generation failed in ComfyUI':'Generation completed with no media output')}}catch(e){clearInterval(state.poll);finishLoading();toast(e.message)}},1300)
 }
@@ -118,12 +118,12 @@ function extractOutputs(history){
     ['images','gifs','videos','audio'].forEach(kind=>(node[kind]||[]).forEach(file=>out.push({...file,kind,promptId,time:Number(promptId)||0,settings})))
   })});return out.reverse()
 }
-function showOutput(o){
+function showOutput(o,{restoreSettings=true}={}){
   const url=mediaUrl(o),isVideo=o.kind==='videos'||o.kind==='gifs'||/\.(mp4|webm|mov)$/i.test(o.filename);
   $('.placeholder').classList.add('hidden');els.preview.classList.toggle('hidden',isVideo);els.video.classList.toggle('hidden',!isVideo);
   if(isVideo)els.video.src=url;else els.preview.src=url;els.stage.classList.remove('empty');state.active=o;$('#openOriginal').classList.remove('hidden');$('#openOriginal').onclick=()=>window.open(url,'_blank');els.status.textContent=o.filename;
-  if(o.settings){apply(o.settings);toast('Prompts and settings restored from this generation')}
-  window.ComfyEnhancements?.selectOutput?.(o);
+  if(restoreSettings&&o.settings){apply(o.settings);toast('Prompts and settings restored from this generation')}
+  if(restoreSettings)window.ComfyEnhancements?.selectOutput?.(o);
   document.querySelector('[data-view="create"]').click();
 }
 async function loadHistory(){

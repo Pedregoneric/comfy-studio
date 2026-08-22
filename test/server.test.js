@@ -1,4 +1,5 @@
 const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');
+test('completed generations preserve the active random-seed form',()=>{const app=fs.readFileSync(path.join(__dirname,'..','public/app.js'),'utf8');assert.match(app,/showOutput\(latest,\{restoreSettings:false\}\)/);assert.match(app,/function showOutput\(o,\{restoreSettings=true\}=\{\}\)/)});
 test('frontend assets and server entry exist',()=>{for(const f of ['server.js','public/index.html','public/app.css','public/app.js'])assert.equal(fs.existsSync(path.join(__dirname,'..',f)),true)});
 test('server limits proxied Comfy routes',()=>{const source=fs.readFileSync(path.join(__dirname,'..','server.js'),'utf8');assert.match(source,/const allowed = new Set/);assert.match(source,/Unknown API route/)});
 test('persistent library and agent APIs are present',()=>{const source=fs.readFileSync(path.join(__dirname,'..','server.js'),'utf8');assert.match(source,/\/api\\\/library/);assert.match(source,/\/api\/agent\/generate/);assert.match(source,/LIBRARY_FILE/)});
